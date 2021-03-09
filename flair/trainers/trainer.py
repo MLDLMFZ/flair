@@ -93,6 +93,7 @@ class ModelTrainer:
         eval_on_train_fraction=0.0,
         eval_on_train_shuffle=False,
         save_model_at_each_epoch=False,
+        main_score_type=("micro avg", 'f1-score'),
         **kwargs,
     ) -> dict:
         """
@@ -127,10 +128,12 @@ class ModelTrainer:
         :param eval_on_train_shuffle: if True the train data fraction is determined on the start of training
         and kept fixed during training, otherwise it's sampled at beginning of each epoch
         :param save_model_at_each_epoch: If True, at each epoch the thus far trained model will be saved
+        :param main_score_type: Type of metric to use for best model tracking and learning rate scheduling (if dev data is available, otherwise loss will be used)
         :param kwargs: Other arguments for the Optimizer
         :return:
         """
 
+        self.main_score_type=main_score_type
         if self.use_tensorboard:
             try:
                 from torch.utils.tensorboard import SummaryWriter
@@ -445,6 +448,7 @@ class ModelTrainer:
                         mini_batch_size=mini_batch_chunk_size,
                         num_workers=num_workers,
                         embedding_storage_mode=embeddings_storage_mode,
+                        main_score_type=self.main_score_type
                     )
                     result_line += f"\t{train_eval_result.log_line}"
 
@@ -457,6 +461,7 @@ class ModelTrainer:
                         mini_batch_size=mini_batch_chunk_size,
                         num_workers=num_workers,
                         embedding_storage_mode=embeddings_storage_mode,
+                        main_score_type=self.main_score_type
                     )
                     result_line += (
                         f"\t{train_part_loss}\t{train_part_eval_result.log_line}"
@@ -472,6 +477,7 @@ class ModelTrainer:
                         num_workers=num_workers,
                         out_path=base_path / "dev.tsv",
                         embedding_storage_mode=embeddings_storage_mode,
+                        main_score_type=self.main_score_type
                     )
                     result_line += f"\t{dev_loss}\t{dev_eval_result.log_line}"
                     log.info(
@@ -500,6 +506,7 @@ class ModelTrainer:
                         num_workers=num_workers,
                         out_path=base_path / "test.tsv",
                         embedding_storage_mode=embeddings_storage_mode,
+                        main_score_type=self.main_score_type
                     )
                     result_line += f"\t{test_loss}\t{test_eval_result.log_line}"
                     log.info(
@@ -671,6 +678,7 @@ class ModelTrainer:
             num_workers=num_workers,
             out_path=base_path / "test.tsv",
             embedding_storage_mode="none",
+            main_score_type=self.main_score_type
         )
 
         test_results: Result = test_results
@@ -689,6 +697,7 @@ class ModelTrainer:
                         num_workers=num_workers,
                         out_path=base_path / f"{subcorpus.name}-test.tsv",
                         embedding_storage_mode="none",
+                        main_score_type=self.main_score_type
                     )
                     log.info(subcorpus.name)
                     log.info(subcorpus_results.log_line)
