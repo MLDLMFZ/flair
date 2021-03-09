@@ -108,6 +108,32 @@ class ModelTrainer:
 
 
 
+    def save_best_model(self, base_path, save_checkpoint):
+        # delete previous best model
+        previous_best_path = self.get_best_model_path(base_path)
+        if os.path.exists(previous_best_path):
+            os.remove(previous_best_path)
+        if save_checkpoint:
+            best_checkpoint_path = previous_best_path.replace("model", "checkpoint")
+            if os.path.exists(best_checkpoint_path):
+                os.remove(best_checkpoint_path)
+        # save current best model
+        self.model.save(
+            base_path / f"best-model_epoch{self.epoch}.pt")
+        if save_checkpoint:
+            self.save_checkpoint(
+                base_path / f"best-checkpoint_epoch{self.epoch}.pt")
+
+    def get_best_model_path(self, base_path, final_test=False):
+        all_best_model_names = [filename for filename in os.listdir(base_path) if
+                                     filename.startswith("best-model_epoch")]
+        if self.epoch>1 or final_test:
+            assert len(all_best_model_names)==1, "There should be exactly one best model saved at any epoch >1"
+            return os.path.join(base_path, all_best_model_names[0])
+        else:
+            assert len(all_best_model_names) == 0, "There should be no best model saved at epoch 1"
+            return ""
+
     def train(
         self,
         base_path: Union[Path, str],
@@ -142,6 +168,7 @@ class ModelTrainer:
         eval_on_train_shuffle=False,
         save_model_at_each_epoch=False,
         main_score_type=("micro avg", 'f1-score'),
+        save_best_checkpoints=False,
         tensorboard_comment='',
         **kwargs,
     ) -> dict:
@@ -178,6 +205,7 @@ class ModelTrainer:
         and kept fixed during training, otherwise it's sampled at beginning of each epoch
         :param save_model_at_each_epoch: If True, at each epoch the thus far trained model will be saved
         :param main_score_type: Type of metric to use for best model tracking and learning rate scheduling (if dev data is available, otherwise loss will be used)
+        :param save_best_checkpoints: If True, in addition to saving the best model also the corresponding checkpoint is saved
         :param tensorboard_comment: Comment to use for tensorboard logging
         :param kwargs: Other arguments for the Optimizer
         :return:
@@ -373,12 +401,12 @@ class ModelTrainer:
                 if (
                     (anneal_with_restarts or anneal_with_prestarts)
                     and learning_rate != previous_learning_rate
-                    and (base_path / "best-model.pt").exists()
+                    and os.path.exists(self.get_best_model_path(base_path))
                 ):
                     if anneal_with_restarts:
                         log.info("resetting to best model")
                         self.model.load_state_dict(
-                            self.model.load(base_path / "best-model.pt").state_dict()
+                            self.model.load(self.get_best_model_path(base_path)).state_dict()
                         )
                     if anneal_with_prestarts:
                         log.info("resetting to pre-best model")
@@ -667,7 +695,7 @@ class ModelTrainer:
                     and self.check_for_best_score(current_score)
                 ):
                     print("saving best model")
-                    self.model.save(base_path / "best-model.pt")
+                    self.save_best_model(base_path, save_checkpoint=save_best_checkpoints)
 
                     if anneal_with_prestarts:
                         current_state_dict = self.model.state_dict()
@@ -734,12 +762,14 @@ class ModelTrainer:
             base_path = Path(base_path)
 
         log_line(log)
-        log.info("Testing using best model ...")
 
         self.model.eval()
 
-        if (base_path / "best-model.pt").exists():
-            self.model = self.model.load(base_path / "best-model.pt")
+        if (os.path.exists(self.get_best_model_path(base_path, final_test=True))):
+            log.info("Testing using best model ...")
+            self.model = self.model.load(self.get_best_model_path(base_path, final_test=True))
+        else:
+            log.info("Testing using last state of model ...")
 
         test_results, test_loss = self.model.evaluate(
             self.corpus.test,
